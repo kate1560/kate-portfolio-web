@@ -1,0 +1,38 @@
+﻿FROM dunglas/frankenphp:php8.4-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    curl \
+    libzip-dev \
+    libicu-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    && docker-php-ext-install \
+    intl \
+    pdo_mysql \
+    zip \
+    exif \
+    pcntl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+COPY . .
+
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+RUN npm ci
+
+RUN npm run build
+
+RUN php artisan optimize
+
+ENV SERVER_NAME=:80
+
+EXPOSE 80
+
+CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
