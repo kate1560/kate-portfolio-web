@@ -1,38 +1,59 @@
-﻿FROM dunglas/frankenphp:php8.4-bookworm
+﻿# =========================================================
+# RASTRO / KATE PORTFOLIO
+# Laravel + Blade + Vite + Tailwind
+# Deployment: Vercel Container Runtime
+# =========================================================
+
+# ---------------------------------------------------------
+# ETAPA 1: Construcción de los assets frontend
+# ---------------------------------------------------------
+FROM node:20-bookworm-slim AS frontend
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    curl \
-    libzip-dev \
-    libicu-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    && docker-php-ext-install \
-    intl \
-    pdo_mysql \
-    zip \
-    exif \
-    pcntl \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-COPY . .
-
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+COPY package*.json ./
 
 RUN npm ci
 
+COPY . .
+
 RUN npm run build
 
-RUN php artisan optimize
 
+# ---------------------------------------------------------
+# ETAPA 2: Aplicación Laravel con FrankenPHP
+# ---------------------------------------------------------
+FROM dunglas/frankenphp:php8.4-bookworm
+
+WORKDIR /app
+
+# Extensiones necesarias para Laravel
+RUN install-php-extensions \
+    pdo_mysql \
+    intl \
+    zip \
+    exif \
+    pcntl
+
+# Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Código de Laravel
+COPY . .
+
+# Dependencias PHP de producción
+RUN composer install \
+    --no-dev \
+    --optimize-autoloader \
+    --no-interaction
+
+# Copiar los assets compilados por Vite
+COPY --from=frontend /app/public/build ./public/build
+
+# Vercel proporciona el puerto mediante la variable PORT
 ENV SERVER_NAME=:80
 
 EXPOSE 80
 
-CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
+# Servidor Laravel mediante FrankenPHP
+CMD ["sh", "-c", "frankenphp php-server --root /app/public --listen :${PORT:-80}"]
